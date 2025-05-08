@@ -1,12 +1,14 @@
 import cv2
 import numpy as np
+import time
+import os
 
 # ---------- Procesamiento ----------
 def preprocesar_frame(frame):
     gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return gris
 
-# ---------- Detección de patrones (flujo óptico) ----------
+# ---------- Detección de patrones ----------
 anterior = None
 def detectar_patrones(frame_actual):
     global anterior
@@ -36,6 +38,13 @@ def dibujar_sobre_frame(frame, resultados):
         cv2.arrowedLine(frame, (x1, y1), (x2, y2), (0, 255, 0), 1, tipLength=0.3)
     return frame
 
+# ---------- Guardar captura ----------
+def guardar_captura(frame):
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    filename = f"captura_{timestamp}.jpg"
+    cv2.imwrite(filename, frame)
+    print(f"Captura guardada como: {filename}")
+
 # ---------- Captura de cámara principal ----------
 def capturar_video():
     cap = cv2.VideoCapture(0)
@@ -51,12 +60,15 @@ def capturar_video():
 
         frame_procesado = preprocesar_frame(frame)
         resultados = detectar_patrones(frame_procesado)
-        frame_marcado = dibujar_sobre_frame(frame, resultados)
+        frame_marcado = dibujar_sobre_frame(frame.copy(), resultados)
 
         cv2.imshow("Visión en vivo", frame_marcado)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        tecla = cv2.waitKey(1) & 0xFF
+        if tecla == ord('q'):
             break
+        elif tecla == ord('s'):
+            guardar_captura(frame_marcado)
 
     cap.release()
     cv2.destroyAllWindows()
