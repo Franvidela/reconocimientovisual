@@ -1,41 +1,46 @@
 import cv2
-import numpy as np
+import mediapipe as mp
 import time
-import os
+from collections import deque
 
-# ---------- Procesamiento ----------
-def preprocesar_frame(frame):
-    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return gris
+# Inicializar MediaPipe Hands
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
 
-# ---------- Detección de patrones ----------
-anterior = None
-def detectar_patrones(frame_actual):
-    global anterior
-    resultados = []
+# Historial de posiciones de la palma para detectar trayectoria
+trayectoria = deque(maxlen=20)
 
-    if anterior is None:
-        anterior = frame_actual
-        return resultados
+# ---------- Detección y análisis de movimiento ----------
+def detectar_movimiento(frame):
+    global trayectoria
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    resultados = hands.process(frame_rgb)
+    gesto_detectado = None
 
-    flujo = cv2.calcOpticalFlowFarneback(anterior, frame_actual, None,
-                                         0.5, 3, 15, 3, 5, 1.2, 0)
+    if resultados.multi_hand_landmarks:
+        for mano in resultados.multi_hand_landmarks:
+            # Punto 0 es la base de la palma
+            punto_palma = mano.landmark[0]
+            h, w, _ = frame.shape
+            x = int(punto_palma.x * w)
+            y = int(punto_palma.y * h)
+            trayectoria.append((x, y))
+            mp_drawing.draw_landmarks(frame, mano, mp_hands.HAND_CONNECTIONS)
 
-    h, w = frame_actual.shape
-    paso = 16
-    for y in range(0, h, paso):
-        for x in range(0, w, paso):
-            fx, fy = flujo[y, x]
-            if abs(fx) > 1 or abs(fy) > 1:
-                resultados.append(((x, y), (int(x + fx), int(y + fy))))
+        # Lógica simple: si la mano se mueve horizontalmente izquierda-derecha
+        if len(trayectoria) >= 10:
+            x_dif = trayectoria[-1][0] - trayectoria[0][0]
+            if abs(x_dif) > 100:
+                gesto_detectado = "Saludo (hola)"
 
-    anterior = frame_actual
-    return resultados
+    return frame, gesto_detectado
 
-# ---------- Visualización ----------
-def dibujar_sobre_frame(frame, resultados):
-    for (x1, y1), (x2, y2) in resultados:
-        cv2.arrowedLine(frame, (x1, y1), (x2, y2), (0, 255, 0), 1, tipLength=0.3)
+# ---------- Mostrar resultado en pantalla ----------
+def mostrar_resultado(frame, gesto):
+    if gesto:
+        cv2.putText(frame, f"Gesto: {gesto}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     return frame
 
 # ---------- Guardar captura ----------
@@ -58,17 +63,17 @@ def capturar_video():
         if not ret:
             break
 
-        frame_procesado = preprocesar_frame(frame)
-        resultados = detectar_patrones(frame_procesado)
-        frame_marcado = dibujar_sobre_frame(frame.copy(), resultados)
+        frame = cv2.flip(frame, 1)  # espejo horizontal para mayor naturalidad
+        frame, gesto = detectar_movimiento(frame)
+        frame = mostrar_resultado(frame, gesto)
 
-        cv2.imshow("Visión en vivo", frame_marcado)
+        cv2.imshow("Lenguaje de Señas - Demo", frame)
 
         tecla = cv2.waitKey(1) & 0xFF
         if tecla == ord('q'):
             break
         elif tecla == ord('s'):
-            guardar_captura(frame_marcado)
+            guardar_captura(frame)
 
     cap.release()
     cv2.destroyAllWindows()
